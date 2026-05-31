@@ -198,6 +198,55 @@ button.secondary {
   padding-top: 24px;
 }
 
+.job-panel {
+  margin-top: 24px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.job-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.job-meta {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: right;
+}
+
+.progress {
+  height: 8px;
+  margin-top: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #edf1f3;
+}
+
+#progressBar {
+  width: 0%;
+  height: 100%;
+  background: var(--accent);
+  transition: width 160ms ease;
+}
+
+.logs {
+  min-height: 116px;
+  max-height: 220px;
+  margin-top: 14px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+  color: #2b3338;
+  font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+
 .actions {
   gap: 8px;
 }
@@ -250,12 +299,14 @@ textarea {
 
   .masthead,
   .result-head,
-  .controls {
+  .controls,
+  .job-head {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .status {
+  .status,
+  .job-meta {
     text-align: left;
   }
 

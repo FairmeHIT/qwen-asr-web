@@ -5,6 +5,9 @@ const output = document.querySelector("#output");
 const statusEl = document.querySelector("#status");
 const submit = document.querySelector("#submit");
 const summarize = document.querySelector("#summarize");
+const jobMeta = document.querySelector("#jobMeta");
+const logs = document.querySelector("#logs");
+const progressBar = document.querySelector("#progressBar");
 const downloadText = document.querySelector("#downloadText");
 const downloadJson = document.querySelector("#downloadJson");
 const downloadSummary = document.querySelector("#downloadSummary");
@@ -25,6 +28,57 @@ function setDownload(link, url) {
   }
   link.href = url;
   link.classList.remove("disabled");
+}
+
+function errorMessage(data, fallback) {
+  const detail = data && data.detail;
+  if (!detail) {
+    return fallback;
+  }
+  if (typeof detail === "string") {
+    return detail;
+  }
+  if (detail.message) {
+    return detail.message;
+  }
+  return JSON.stringify(detail, null, 2);
+}
+
+function setProgress(value) {
+  const progress = Math.max(0, Math.min(Number(value) || 0, 100));
+  progressBar.style.width = `${progress}%`;
+}
+
+function setLogs(items) {
+  if (!items || !items.length) {
+    logs.textContent = "暂无日志";
+    return;
+  }
+  logs.textContent = items.join("\n");
+  logs.scrollTop = logs.scrollHeight;
+}
+
+async function waitForJob(jobId) {
+  while (true) {
+    const res = await fetch(`/api/jobs/${jobId}`);
+    const job = await res.json();
+    if (!res.ok) {
+      throw new Error(job.detail || "Job status failed");
+    }
+
+    jobMeta.textContent = `${job.status} · ${job.stage} · ${job.progress}%`;
+    setProgress(job.progress);
+    setLogs(job.logs);
+
+    if (job.status === "succeeded") {
+      return job.result || {};
+    }
+    if (job.status === "failed") {
+      throw new Error(job.error || "Transcription failed");
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+  }
 }
 
 async function loadHealth() {
@@ -70,6 +124,9 @@ form.addEventListener("submit", async (event) => {
   submit.querySelector("span").textContent = "转写中";
   output.value = "";
   summaryOutput.value = "";
+  jobMeta.textContent = "上传中";
+  setProgress(0);
+  setLogs(["准备上传文件"]);
   setStatus("模型处理中", "ready");
 
   try {
@@ -78,10 +135,14 @@ form.addEventListener("submit", async (event) => {
       method: "POST",
       body: formData,
     });
-    const data = await res.json();
+    let data = await res.json();
     if (!res.ok) {
-      throw new Error(data.detail || "Transcription failed");
+      throw new Error(errorMessage(data, "Transcription failed"));
     }
+    jobMeta.textContent = `${data.status} · ${data.progress}%`;
+    setProgress(data.progress);
+    setLogs([`任务已提交：${data.id}`]);
+    data = await waitForJob(data.id);
     output.value = data.text || "";
     setDownload(downloadText, data.text_url);
     setDownload(downloadJson, data.json_url);
@@ -122,7 +183,7 @@ summarize.addEventListener("click", async () => {
     });
     const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.detail || "Summary failed");
+      throw new Error(errorMessage(data, "Summary failed"));
     }
     summaryOutput.value = data.summary || "";
     setDownload(downloadSummary, data.summary_url);

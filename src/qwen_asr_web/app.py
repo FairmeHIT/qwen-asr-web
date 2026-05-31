@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .asr import ASRService, default_checkpoint, project_root
+from .jobs import Job, JobStore
 from .llm import LLMService
 
 
@@ -24,6 +25,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 service = ASRService()
 llm_service = LLMService()
+jobs = JobStore()
 app = FastAPI(title="Qwen3-ASR Web", version=__version__)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -41,6 +43,7 @@ def health() -> dict:
     return {
         "app": __version__,
         "checkpoint": service.checkpoint,
+        "checkpoint_exists": (Path(service.checkpoint) / "config.json").is_file(),
         "default_checkpoint": default_checkpoint(ROOT),
         "model_loaded": service._model is not None,
         "torch": torch.__version__,
@@ -68,38 +71,83 @@ async def transcribe(
     suffix = Path(file.filename).suffix
     safe_name = f"{uuid.uuid4().hex}{suffix}"
     upload_path = UPLOAD_DIR / safe_name
+    job_id = upload_path.stem
+    job = jobs.create(job_id, "transcribe")
+    job.log(f"收到文件：{file.filename}")
 
     try:
         with upload_path.open("wb") as f:
             while chunk := await file.read(1024 * 1024):
                 f.write(chunk)
+        job.progress = 10
+        job.stage = "uploaded"
+        job.log(f"文件已保存：{upload_path.name} ({upload_path.stat().st_size / 1024 / 1024:.1f} MB)")
 
-        result = service.transcribe_file(
-            upload_path,
-            language=language.strip() or None,
-            context=context.strip(),
-        )
+        def run(job: Job) -> None:
+            job.stage = "preparing"
+            job.progress = 20
+            job.log(f"ASR checkpoint: {service.checkpoint}")
+            job.log("准备加载模型；首次运行可能需要较长时间")
 
-        output_id = upload_path.stem
-        txt_path = OUTPUT_DIR / f"{output_id}.txt"
-        json_path = OUTPUT_DIR / f"{output_id}.json"
-        txt_path.write_text(result.text, encoding="utf-8")
-        json_path.write_text(result.to_json(), encoding="utf-8")
+            result = service.transcribe_file(
+                upload_path,
+                language=language.strip() or None,
+                context=context.strip(),
+                progress_callback=lambda message, progress=None: update_job(job, message, progress),
+            )
 
-        return JSONResponse(
-            {
-                "id": output_id,
+            job.stage = "writing"
+            job.progress = 90
+            job.log("转写完成，正在写出结果文件")
+            txt_path = OUTPUT_DIR / f"{job.id}.txt"
+            json_path = OUTPUT_DIR / f"{job.id}.json"
+            txt_path.write_text(result.text, encoding="utf-8")
+            json_path.write_text(result.to_json(), encoding="utf-8")
+            job.result = {
+                "id": job.id,
                 "language": result.language,
                 "text": result.text,
                 "summary": None,
                 "text_url": f"/outputs/{txt_path.name}",
                 "json_url": f"/outputs/{json_path.name}",
             }
+            job.log(f"识别语言：{result.language or 'unknown'}")
+
+        jobs.start(job, run)
+        return JSONResponse(
+            {
+                "id": job.id,
+                "status": job.status,
+                "progress": job.progress,
+                "status_url": f"/api/jobs/{job.id}",
+            }
         )
     except RuntimeError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        job.status = "failed"
+        job.stage = "upload_failed"
+        job.error = str(exc)
+        job.log(f"上传失败：{exc}")
+        raise HTTPException(status_code=500, detail={"message": str(exc), "job": job.snapshot()}) from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {exc}") from exc
+        job.status = "failed"
+        job.stage = "upload_failed"
+        job.error = f"Upload failed: {exc}"
+        job.log(job.error)
+        raise HTTPException(status_code=500, detail={"message": job.error, "job": job.snapshot()}) from exc
+
+
+def update_job(job: Job, message: str, progress: int | None = None) -> None:
+    if progress is not None:
+        job.progress = max(job.progress, min(int(progress), 99))
+    job.log(message)
+
+
+@app.get("/api/jobs/{job_id}")
+def get_job(job_id: str) -> JSONResponse:
+    snapshot = jobs.snapshot(job_id)
+    if snapshot is None:
+        raise HTTPException(status_code=404, detail="Job not found.")
+    return JSONResponse(snapshot)
 
 
 @app.post("/api/summarize")

@@ -5,9 +5,10 @@ import os
 import shutil
 import subprocess
 import tempfile
+import threading
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 
 VIDEO_EXTS = {
@@ -50,6 +51,15 @@ def project_root() -> Path:
 
 def default_checkpoint(root: Optional[Path] = None) -> str:
     root = root or project_root()
+    configured = os.environ.get("ASR_CHECKPOINT")
+    if configured:
+        configured_path = Path(configured).expanduser()
+        if configured_path.is_absolute() and (configured_path / "config.json").is_file():
+            return str(configured_path)
+        local_configured = root / configured_path
+        if (local_configured / "config.json").is_file():
+            return str(local_configured)
+
     for local in (root / "models" / "Qwen3-ASR-1.7B", root / "models"):
         if (local / "config.json").is_file():
             return str(local)
@@ -106,16 +116,41 @@ class ASRService:
         max_new_tokens: int = 512,
     ) -> None:
         root = project_root()
-        self.checkpoint = checkpoint or os.environ.get("ASR_CHECKPOINT") or default_checkpoint(root)
+        self.checkpoint = self._resolve_checkpoint(checkpoint or os.environ.get("ASR_CHECKPOINT"), root)
         self.device_map = device_map
         self.dtype = dtype
         self.batch_size = batch_size
         self.max_new_tokens = max_new_tokens
         self._model = None
+        self._lock = threading.Lock()
+
+    def _resolve_checkpoint(self, checkpoint: Optional[str], root: Path) -> str:
+        if checkpoint:
+            path = Path(checkpoint).expanduser()
+            candidates = [path] if path.is_absolute() else [root / path, path]
+            for candidate in candidates:
+                if (candidate / "config.json").is_file():
+                    return str(candidate.resolve())
+            fallback = default_checkpoint(root)
+            if fallback != "Qwen/Qwen3-ASR-1.7B":
+                return fallback
+            return checkpoint
+        return default_checkpoint(root)
 
     def load(self):
         if self._model is None:
             from qwen_asr import Qwen3ASRModel
+
+            checkpoint_path = Path(self.checkpoint)
+            if (
+                not self.checkpoint.startswith("Qwen/")
+                and not self.checkpoint.startswith("http")
+                and not (checkpoint_path / "config.json").is_file()
+            ):
+                raise FileNotFoundError(
+                    f"ASR checkpoint is invalid: {self.checkpoint}. "
+                    "Set ASR_CHECKPOINT to a local model directory containing config.json."
+                )
 
             self._model = Qwen3ASRModel.from_pretrained(
                 self.checkpoint,
@@ -132,20 +167,37 @@ class ASRService:
         language: Optional[str] = None,
         context: str = "",
         keep_extracted_audio: bool = False,
+        progress_callback: Optional[Callable[[str, Optional[int]], None]] = None,
     ) -> TranscriptionResult:
+        def report(message: str, progress: Optional[int] = None) -> None:
+            if progress_callback:
+                progress_callback(message, progress)
+
         input_path = input_path.expanduser().resolve()
         if not input_path.exists():
             raise FileNotFoundError(input_path)
+        if input_path.stat().st_size == 0:
+            raise ValueError(f"Input file is empty: {input_path}")
 
         with tempfile.TemporaryDirectory(prefix="qwen_asr_") as tmp:
             temp_dir = Path(tmp)
+            report("检查输入文件", 25)
             audio_path = extract_audio_if_video(input_path, temp_dir)
-            model = self.load()
-            result = model.transcribe(
-                audio=str(audio_path),
-                context=context,
-                language=language,
-            )[0]
+            if audio_path != input_path:
+                report("视频音轨已抽取为 16k 单声道 WAV", 35)
+            else:
+                report("输入文件按音频处理", 35)
+            report("等待 ASR 推理资源", 40)
+            with self._lock:
+                report("加载 ASR 模型", 45)
+                model = self.load()
+                report("模型已加载，开始转写", 60)
+                result = model.transcribe(
+                    audio=str(audio_path),
+                    context=context,
+                    language=language,
+                )[0]
+            report("模型推理完成", 85)
 
             if keep_extracted_audio and audio_path.parent == temp_dir:
                 kept = input_path.with_suffix(".16k.wav")

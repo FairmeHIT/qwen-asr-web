@@ -5,6 +5,7 @@
 ## Features
 
 - Web 页面上传音频/视频并转写
+- 转写任务日志、阶段和进度可在页面实时查看
 - CLI 批量转写音频/视频
 - 基于 DeepSeek 或任意 OpenAI-compatible API 的要点提炼
 - 自动优先加载本地模型目录
@@ -113,6 +114,14 @@ Web 页面中，转写完成后点击“提炼要点”。CLI 用法：
 ./run.sh summarize output.txt -o output.summary.md
 qwen3-asr summarize output.txt -o output.summary.md --json-output output.summary.json
 ```
+
+## Troubleshooting
+
+- Web 页面“任务状态”会显示上传、模型加载、转写、写出文件等日志。
+- 如果出现 `Transcription failed`，先运行 `./run.sh check`，确认 `checkpoint` 指向包含 `config.json` 的本地模型目录。
+- 如果 `.env` 中的 `ASR_CHECKPOINT` 无效，服务会优先回退到 `models/Qwen3-ASR-1.7B/` 或 `models/`。
+- 视频转写需要安装 `ffmpeg`；未安装时日志会明确提示。
+- 详细异常会写入 `data/outputs/<job-id>.traceback.log`，该目录默认不会提交到 Git。
 
 ## Repository Layout
 
