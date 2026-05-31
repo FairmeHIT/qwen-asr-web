@@ -5,6 +5,13 @@ cd "$(dirname "$0")"
 
 unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy
 
+if [[ -f .env ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
 export PYTHONPATH="${PYTHONPATH:-$PWD/src}"
 export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 
@@ -13,12 +20,14 @@ usage() {
 Usage:
   ./run.sh web [--host 0.0.0.0] [--port 8000]
   ./run.sh transcribe <audio_or_video> [args...]
+  ./run.sh summarize <text_file> [args...]
   ./run.sh download-model [model_id] [local_dir]
   ./run.sh check
 
 Examples:
   ./run.sh web
   ./run.sh transcribe input.wav -o output.txt --language Chinese
+  ./run.sh summarize output.txt -o output.summary.md
   ./run.sh download-model Qwen/Qwen3-ASR-1.7B models/Qwen3-ASR-1.7B
 EOF
 }
@@ -34,6 +43,9 @@ case "$cmd" in
     ;;
   transcribe)
     exec .venv/bin/python -m qwen_asr_web.cli transcribe "$@"
+    ;;
+  summarize)
+    exec .venv/bin/python -m qwen_asr_web.cli summarize "$@"
     ;;
   download-model)
     model_id="${1:-Qwen/Qwen3-ASR-1.7B}"

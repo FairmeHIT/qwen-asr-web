@@ -64,6 +64,25 @@
           </div>
           <textarea id="output" readonly placeholder="转写完成后文本会显示在这里"></textarea>
         </section>
+
+        <section class="summary">
+          <div class="result-head">
+            <div>
+              <p class="eyebrow">Summary</p>
+              <h2>要点提炼</h2>
+            </div>
+            <div class="actions">
+              <button id="summarize" class="secondary" type="button">提炼要点</button>
+              <a id="downloadSummary" class="link disabled" href="#">MD</a>
+              <a id="downloadSummaryJson" class="link disabled" href="#">JSON</a>
+            </div>
+          </div>
+          <label class="summary-prompt">
+            <span>提炼要求</span>
+            <input id="summaryInstruction" type="text" placeholder="可选：例如提炼会议结论、行动项和风险" />
+          </label>
+          <textarea id="summaryOutput" readonly placeholder="点击“提炼要点”后，摘要会显示在这里"></textarea>
+        </section>
       </section>
     </main>
     <script src="/static/app.js"></script>

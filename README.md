@@ -1,11 +1,12 @@
 # Qwen3-ASR Local Web
 
-简洁的本地音视频转写工具：Qwen3-ASR + FastAPI + 轻量 Web UI。适合在单张 NVIDIA GPU 上转写较长的会议、课程、访谈音视频。
+简洁的本地音视频转写工具：Qwen3-ASR + FastAPI + 轻量 Web UI。适合在 NVIDIA GPU 上转写较长的会议、课程、访谈音视频。
 
 ## Features
 
 - Web 页面上传音频/视频并转写
 - CLI 批量转写音频/视频
+- 基于 DeepSeek 或任意 OpenAI-compatible API 的要点提炼
 - 自动优先加载本地模型目录
 - 支持语种指定、上下文提示、TXT/JSON 输出
 - 默认忽略模型、缓存、上传文件和转写结果，适合公开到 GitHub
@@ -94,6 +95,25 @@ qwen3-asr transcribe input.mp4 -o output.txt --json-output output.json
 
 视频文件需要系统安装 `ffmpeg`；纯音频文件不需要。
 
+## LLM Summary
+
+要点提炼使用 OpenAI-compatible Chat Completions API。DeepSeek 是默认配置：
+
+```bash
+export LLM_API_KEY=你的APIKey
+export LLM_BASE_URL=https://api.deepseek.com
+export LLM_MODEL=deepseek-v4-flash
+```
+
+也兼容其他大模型 API，只需替换 `LLM_BASE_URL` 和 `LLM_MODEL`。
+
+Web 页面中，转写完成后点击“提炼要点”。CLI 用法：
+
+```bash
+./run.sh summarize output.txt -o output.summary.md
+qwen3-asr summarize output.txt -o output.summary.md --json-output output.summary.json
+```
+
 ## Repository Layout
 
 ```text
@@ -104,6 +124,7 @@ src/qwen_asr_web/
   app.py                FastAPI 应用
   asr.py                模型加载与转写服务
   cli.py                CLI 子命令
+  llm.py                OpenAI-compatible 摘要服务
   static/               Web 前台
 ```
 
@@ -111,9 +132,9 @@ src/qwen_asr_web/
 
 `.gitignore` 已排除：
 
-- `.venv/`、`__pycache__/`、构建产物
+- `.env`、`.venv/`、`__pycache__/`、构建产物
 - `models/`、`.cache/`、大模型权重
 - `data/uploads/`、`data/outputs/`
 - 常见音视频文件
 
-公开仓库时只提交源码、配置、文档；不要提交模型权重、上传文件、输出文件或本地虚拟环境。
+公开仓库时只提交源码、配置、文档；不要提交 API key、模型权重、上传文件、输出文件或本地虚拟环境。

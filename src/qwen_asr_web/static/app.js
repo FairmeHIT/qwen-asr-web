@@ -4,8 +4,13 @@ const fileMeta = document.querySelector("#fileMeta");
 const output = document.querySelector("#output");
 const statusEl = document.querySelector("#status");
 const submit = document.querySelector("#submit");
+const summarize = document.querySelector("#summarize");
 const downloadText = document.querySelector("#downloadText");
 const downloadJson = document.querySelector("#downloadJson");
+const downloadSummary = document.querySelector("#downloadSummary");
+const downloadSummaryJson = document.querySelector("#downloadSummaryJson");
+const summaryInstruction = document.querySelector("#summaryInstruction");
+const summaryOutput = document.querySelector("#summaryOutput");
 
 function setStatus(text, kind = "") {
   statusEl.textContent = text;
@@ -30,6 +35,9 @@ async function loadHealth() {
       setStatus(`${health.gpu || "CUDA"} ready`, "ready");
     } else {
       setStatus("CUDA 未可用", "error");
+    }
+    if (!health.llm_configured) {
+      summaryOutput.placeholder = "未配置 LLM_API_KEY 或 DEEPSEEK_API_KEY，配置后可提炼要点";
     }
   } catch (error) {
     setStatus("服务未就绪", "error");
@@ -56,9 +64,12 @@ form.addEventListener("submit", async (event) => {
 
   setDownload(downloadText, "");
   setDownload(downloadJson, "");
+  setDownload(downloadSummary, "");
+  setDownload(downloadSummaryJson, "");
   submit.disabled = true;
   submit.querySelector("span").textContent = "转写中";
   output.value = "";
+  summaryOutput.value = "";
   setStatus("模型处理中", "ready");
 
   try {
@@ -81,6 +92,48 @@ form.addEventListener("submit", async (event) => {
   } finally {
     submit.disabled = false;
     submit.querySelector("span").textContent = "开始转写";
+  }
+});
+
+summarize.addEventListener("click", async () => {
+  const text = output.value.trim();
+  if (!text) {
+    setStatus("没有可提炼文本", "error");
+    return;
+  }
+
+  setDownload(downloadSummary, "");
+  setDownload(downloadSummaryJson, "");
+  summarize.disabled = true;
+  summarize.textContent = "提炼中";
+  summaryOutput.value = "";
+  setStatus("要点提炼中", "ready");
+
+  try {
+    const res = await fetch("/api/summarize", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        text,
+        instruction: summaryInstruction.value || "",
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || "Summary failed");
+    }
+    summaryOutput.value = data.summary || "";
+    setDownload(downloadSummary, data.summary_url);
+    setDownload(downloadSummaryJson, data.json_url);
+    setStatus(`提炼完成 · ${data.model}`, "ready");
+  } catch (error) {
+    summaryOutput.value = error.message || String(error);
+    setStatus("提炼失败", "error");
+  } finally {
+    summarize.disabled = false;
+    summarize.textContent = "提炼要点";
   }
 });
 

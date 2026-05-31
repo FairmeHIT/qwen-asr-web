@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import __version__
 from .asr import ASRService, default_checkpoint, project_root
+from .llm import LLMService
 
 
 ROOT = project_root()
@@ -22,6 +23,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 service = ASRService()
+llm_service = LLMService()
 app = FastAPI(title="Qwen3-ASR Web", version=__version__)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -47,6 +49,10 @@ def health() -> dict:
         "gpu": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
         "transformers": transformers.__version__,
         "ffmpeg": shutil.which("ffmpeg"),
+        "llm_configured": llm_service.configured,
+        "llm_provider": llm_service.provider,
+        "llm_base_url": llm_service.base_url,
+        "llm_model": llm_service.model,
     }
 
 
@@ -85,6 +91,7 @@ async def transcribe(
                 "id": output_id,
                 "language": result.language,
                 "text": result.text,
+                "summary": None,
                 "text_url": f"/outputs/{txt_path.name}",
                 "json_url": f"/outputs/{json_path.name}",
             }
@@ -93,6 +100,33 @@ async def transcribe(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Transcription failed: {exc}") from exc
+
+
+@app.post("/api/summarize")
+async def summarize(payload: dict) -> JSONResponse:
+    text = str(payload.get("text") or "")
+    instruction = str(payload.get("instruction") or "")
+
+    try:
+        result = llm_service.summarize(text=text, instruction=instruction)
+        output_id = uuid.uuid4().hex
+        summary_path = OUTPUT_DIR / f"{output_id}.summary.md"
+        json_path = OUTPUT_DIR / f"{output_id}.summary.json"
+        summary_path.write_text(result.summary, encoding="utf-8")
+        json_path.write_text(result.to_json(), encoding="utf-8")
+
+        return JSONResponse(
+            {
+                "summary": result.summary,
+                "provider": result.provider,
+                "base_url": result.base_url,
+                "model": result.model,
+                "summary_url": f"/outputs/{summary_path.name}",
+                "json_url": f"/outputs/{json_path.name}",
+            }
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Summary failed: {exc}") from exc
 
 
 app.mount("/outputs", StaticFiles(directory=OUTPUT_DIR), name="outputs")

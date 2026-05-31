@@ -185,7 +185,14 @@ button:disabled {
   opacity: 0.65;
 }
 
-.result {
+button.secondary {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--accent-strong);
+}
+
+.result,
+.summary {
   margin-top: 30px;
   border-top: 1px solid var(--line);
   padding-top: 24px;
@@ -220,6 +227,15 @@ textarea {
   color: var(--ink);
   font: 15px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   padding: 16px;
+}
+
+.summary-prompt {
+  display: block;
+  margin-top: 16px;
+}
+
+#summaryOutput {
+  min-height: 280px;
 }
 
 @media (max-width: 720px) {

@@ -9,6 +9,7 @@ import uvicorn
 
 from . import __version__
 from .asr import ASRService, default_checkpoint
+from .llm import LLMService
 
 
 def add_transcribe_args(parser: argparse.ArgumentParser) -> None:
@@ -81,6 +82,42 @@ def run_download_model(args: argparse.Namespace) -> int:
     return 0
 
 
+def add_summarize_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("input", help="Text file to summarize.")
+    parser.add_argument("-o", "--output", help="Output markdown path. Defaults to <input>.summary.md")
+    parser.add_argument("--json-output", help="Optional JSON output path.")
+    parser.add_argument("--instruction", default="", help="Optional summarization instruction.")
+    parser.add_argument("--api-key", default=None, help="Override LLM_API_KEY/DEEPSEEK_API_KEY.")
+    parser.add_argument("--base-url", default=None, help="OpenAI-compatible base URL.")
+    parser.add_argument("--model", default=None, help="Chat completions model name.")
+
+
+def run_summarize(args: argparse.Namespace) -> int:
+    input_path = Path(args.input).expanduser().resolve()
+    output_path = (
+        Path(args.output).expanduser().resolve()
+        if args.output
+        else input_path.with_suffix(".summary.md")
+    )
+    json_output = Path(args.json_output).expanduser().resolve() if args.json_output else None
+    text = input_path.read_text(encoding="utf-8")
+
+    service = LLMService(api_key=args.api_key, base_url=args.base_url, model=args.model)
+    result = service.summarize(text=text, instruction=args.instruction)
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(result.summary, encoding="utf-8")
+    if json_output:
+        json_output.parent.mkdir(parents=True, exist_ok=True)
+        json_output.write_text(result.to_json(), encoding="utf-8")
+
+    print(f"Model: {result.model}")
+    print(f"Summary: {output_path}")
+    if json_output:
+        print(f"JSON: {json_output}")
+    return 0
+
+
 def run_check(_: argparse.Namespace) -> int:
     import torch
     import transformers
@@ -94,6 +131,10 @@ def run_check(_: argparse.Namespace) -> int:
         print("gpu:", torch.cuda.get_device_name(0))
     print("ffmpeg:", shutil.which("ffmpeg") or "not found")
     print("checkpoint:", default_checkpoint())
+    llm = LLMService()
+    print("llm configured:", llm.configured)
+    print("llm base url:", llm.base_url)
+    print("llm model:", llm.model)
     return 0
 
 
@@ -112,6 +153,10 @@ def main() -> int:
     transcribe_parser = sub.add_parser("transcribe", help="Transcribe an audio/video file.")
     add_transcribe_args(transcribe_parser)
     transcribe_parser.set_defaults(func=run_transcribe)
+
+    summarize_parser = sub.add_parser("summarize", help="Summarize a text file with an LLM.")
+    add_summarize_args(summarize_parser)
+    summarize_parser.set_defaults(func=run_summarize)
 
     download_parser = sub.add_parser("download-model", help="Download a model from ModelScope.")
     download_parser.add_argument("model_id", nargs="?", default="Qwen/Qwen3-ASR-1.7B")
