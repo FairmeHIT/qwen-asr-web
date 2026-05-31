@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Qwen3-ASR</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="panel">
+        <div class="masthead">
+          <div>
+            <p class="eyebrow">Local ASR Workbench</p>
+            <h1>Qwen3-ASR</h1>
+          </div>
+          <div class="status" id="status">检查环境中</div>
+        </div>
+
+        <form id="form" class="workspace">
+          <label class="dropzone" for="file">
+            <input id="file" name="file" type="file" accept="audio/*,video/*" required />
+            <span class="drop-title">选择音频或视频文件</span>
+            <span class="drop-meta" id="fileMeta">支持长音频；视频文件需要系统安装 ffmpeg</span>
+          </label>
+
+          <div class="controls">
+            <label>
+              <span>语言</span>
+              <select id="language" name="language">
+                <option value="">自动识别</option>
+                <option value="Chinese">Chinese</option>
+                <option value="English">English</option>
+                <option value="Cantonese">Cantonese</option>
+                <option value="Japanese">Japanese</option>
+                <option value="Korean">Korean</option>
+                <option value="French">French</option>
+                <option value="German">German</option>
+                <option value="Spanish">Spanish</option>
+              </select>
+            </label>
+
+            <label class="context">
+              <span>上下文</span>
+              <input id="context" name="context" type="text" placeholder="可选：会议、课程、访谈等背景词" />
+            </label>
+
+            <button id="submit" type="submit">
+              <span>开始转写</span>
+            </button>
+          </div>
+        </form>
+
+        <section class="result">
+          <div class="result-head">
+            <div>
+              <p class="eyebrow">Result</p>
+              <h2>转写结果</h2>
+            </div>
+            <div class="actions">
+              <a id="downloadText" class="link disabled" href="#">TXT</a>
+              <a id="downloadJson" class="link disabled" href="#">JSON</a>
+            </div>
+          </div>
+          <textarea id="output" readonly placeholder="转写完成后文本会显示在这里"></textarea>
+        </section>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

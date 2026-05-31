@@ -1,0 +1,55 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# Model and cache artifacts
+models/
+.cache/
+*.safetensors
+*.bin
+*.pt
+*.pth
+*.onnx
+*.gguf
+
+# Runtime data
+data/uploads/
+data/outputs/
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.aac
+*.ogg
+*.mp4
+*.mkv
+*.mov
+*.avi
+*.webm
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

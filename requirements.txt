@@ -1,0 +1,5 @@
+qwen-asr==0.0.6
+fastapi>=0.136
+uvicorn[standard]>=0.48
+python-multipart>=0.0.29
+modelscope>=1.37
