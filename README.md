@@ -94,7 +94,7 @@ qwen3-asr check
 qwen3-asr transcribe input.mp4 -o output.txt --json-output output.json
 ```
 
-视频文件需要系统安装 `ffmpeg`；纯音频文件不需要。
+`m4a/mp3/aac/mp4` 等压缩音视频会先转为 16k 单声道 WAV。系统有 `ffmpeg` 时优先使用 `ffmpeg`，否则使用 Python 依赖里的 PyAV。
 
 ## LLM Summary
 
@@ -120,7 +120,7 @@ qwen3-asr summarize output.txt -o output.summary.md --json-output output.summary
 - Web 页面“任务状态”会显示上传、模型加载、转写、写出文件等日志。
 - 如果出现 `Transcription failed`，先运行 `./run.sh check`，确认 `checkpoint` 指向包含 `config.json` 的本地模型目录。
 - 如果 `.env` 中的 `ASR_CHECKPOINT` 无效，服务会优先回退到 `models/Qwen3-ASR-1.7B/` 或 `models/`。
-- 视频转写需要安装 `ffmpeg`；未安装时日志会明确提示。
+- `m4a/mp3/aac/mp4` 等文件会先转为 WAV；如果系统没有 `ffmpeg`，会自动尝试 PyAV。
 - 详细异常会写入 `data/outputs/<job-id>.traceback.log`，该目录默认不会提交到 Git。
 
 ## Repository Layout

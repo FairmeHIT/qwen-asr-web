@@ -24,6 +24,20 @@ VIDEO_EXTS = {
     ".mpg",
 }
 
+TRANSCODE_EXTS = VIDEO_EXTS | {
+    ".m4a",
+    ".mp3",
+    ".aac",
+    ".ogg",
+    ".opus",
+    ".wma",
+    ".flac",
+}
+
+DIRECT_AUDIO_EXTS = {
+    ".wav",
+}
+
 
 @dataclass(frozen=True)
 class TranscriptionResult:
@@ -79,31 +93,71 @@ def dtype_from_name(name: str):
     raise ValueError(f"Unsupported dtype: {name}")
 
 
-def extract_audio_if_video(input_path: Path, work_dir: Path) -> Path:
-    if input_path.suffix.lower() not in VIDEO_EXTS:
-        return input_path
-
-    ffmpeg = shutil.which("ffmpeg")
-    if not ffmpeg:
-        raise RuntimeError("ffmpeg not found. Install ffmpeg before transcribing video files.")
+def prepare_audio_for_asr(input_path: Path, work_dir: Path) -> tuple[Path, str]:
+    suffix = input_path.suffix.lower()
+    if suffix in DIRECT_AUDIO_EXTS:
+        return input_path, "输入文件为 WAV，直接转写"
+    if suffix not in TRANSCODE_EXTS:
+        return input_path, "未知音频扩展名，直接交给 ASR 解码"
 
     out_path = work_dir / f"{input_path.stem}.16k.wav"
-    cmd = [
-        ffmpeg,
-        "-y",
-        "-i",
-        str(input_path),
-        "-vn",
-        "-ac",
-        "1",
-        "-ar",
-        "16000",
-        "-f",
-        "wav",
-        str(out_path),
-    ]
-    subprocess.run(cmd, check=True)
-    return out_path
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg:
+        cmd = [
+            ffmpeg,
+            "-y",
+            "-i",
+            str(input_path),
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            "-f",
+            "wav",
+            str(out_path),
+        ]
+        subprocess.run(cmd, check=True)
+        return out_path, "已用 ffmpeg 转为 16k 单声道 WAV"
+
+    transcode_with_pyav(input_path, out_path)
+    return out_path, "已用 PyAV 转为 16k 单声道 WAV"
+
+
+def transcode_with_pyav(input_path: Path, out_path: Path) -> None:
+    import av
+    import numpy as np
+    import soundfile as sf
+
+    chunks = []
+    with av.open(str(input_path)) as container:
+        stream = next((s for s in container.streams if s.type == "audio"), None)
+        if stream is None:
+            raise RuntimeError(f"No audio stream found in {input_path.name}.")
+
+        resampler = av.audio.resampler.AudioResampler(
+            format="fltp",
+            layout="mono",
+            rate=16000,
+        )
+
+        for frame in container.decode(stream):
+            frames = resampler.resample(frame)
+            if frames is None:
+                continue
+            if not isinstance(frames, list):
+                frames = [frames]
+            for resampled in frames:
+                arr = resampled.to_ndarray()
+                if arr.ndim == 2:
+                    arr = arr[0]
+                chunks.append(arr.astype("float32", copy=False))
+
+    if not chunks:
+        raise RuntimeError(f"Could not decode audio from {input_path.name}.")
+
+    audio = np.concatenate(chunks)
+    sf.write(str(out_path), audio, 16000)
 
 
 class ASRService:
@@ -182,11 +236,11 @@ class ASRService:
         with tempfile.TemporaryDirectory(prefix="qwen_asr_") as tmp:
             temp_dir = Path(tmp)
             report("检查输入文件", 25)
-            audio_path = extract_audio_if_video(input_path, temp_dir)
+            audio_path, audio_message = prepare_audio_for_asr(input_path, temp_dir)
             if audio_path != input_path:
-                report("视频音轨已抽取为 16k 单声道 WAV", 35)
+                report(audio_message, 35)
             else:
-                report("输入文件按音频处理", 35)
+                report(audio_message, 35)
             report("等待 ASR 推理资源", 40)
             with self._lock:
                 report("加载 ASR 模型", 45)
