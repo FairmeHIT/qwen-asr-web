@@ -95,6 +95,11 @@ qwen3-asr transcribe input.mp4 -o output.txt --json-output output.json
 ```
 
 `m4a/mp3/aac/mp4` 等压缩音视频会先转为 16k 单声道 WAV。系统有 `ffmpeg` 时优先使用 `ffmpeg`，否则使用 Python 依赖里的 PyAV。
+长音频默认 `ASR_MAX_NEW_TOKENS=4096`。如果输出仍明显截断，可以继续调大：
+
+```bash
+ASR_MAX_NEW_TOKENS=8192 ./run.sh web
+```
 
 ## LLM Summary
 
@@ -118,7 +123,9 @@ qwen3-asr summarize output.txt -o output.summary.md --json-output output.summary
 ## Troubleshooting
 
 - Web 页面“任务状态”会显示上传、模型加载、转写、写出文件等日志。
+- 日志会显示原始输入时长和实际送入 ASR 的 WAV 时长，两者应基本一致。
 - 如果出现 `Transcription failed`，先运行 `./run.sh check`，确认 `checkpoint` 指向包含 `config.json` 的本地模型目录。
+- 如果长音频文字明显截断或不完整，调大 `ASR_MAX_NEW_TOKENS`。
 - 如果 `.env` 中的 `ASR_CHECKPOINT` 无效，服务会优先回退到 `models/Qwen3-ASR-1.7B/` 或 `models/`。
 - `m4a/mp3/aac/mp4` 等文件会先转为 WAV；如果系统没有 `ffmpeg`，会自动尝试 PyAV。
 - 详细异常会写入 `data/outputs/<job-id>.traceback.log`，该目录默认不会提交到 Git。

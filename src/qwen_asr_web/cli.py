@@ -22,7 +22,7 @@ def add_transcribe_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--device-map", default="cuda:0")
     parser.add_argument("--dtype", default="bfloat16", choices=["bfloat16", "float16", "float32"])
     parser.add_argument("--batch-size", type=int, default=4)
-    parser.add_argument("--max-new-tokens", type=int, default=512)
+    parser.add_argument("--max-new-tokens", type=int, default=int(os.environ.get("ASR_MAX_NEW_TOKENS", "4096")))
     parser.add_argument("--keep-extracted-audio", action="store_true")
 
 

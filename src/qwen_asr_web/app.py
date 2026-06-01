@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 import uuid
+import os
 from importlib.resources import files
 from pathlib import Path
 
@@ -23,7 +24,7 @@ OUTPUT_DIR = ROOT / "data" / "outputs"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-service = ASRService()
+service = ASRService(max_new_tokens=int(os.environ.get("ASR_MAX_NEW_TOKENS", "4096")))
 llm_service = LLMService()
 jobs = JobStore()
 app = FastAPI(title="Qwen3-ASR Web", version=__version__)
@@ -46,6 +47,7 @@ def health() -> dict:
         "checkpoint_exists": (Path(service.checkpoint) / "config.json").is_file(),
         "default_checkpoint": default_checkpoint(ROOT),
         "model_loaded": service._model is not None,
+        "asr_max_new_tokens": service.max_new_tokens,
         "torch": torch.__version__,
         "torch_cuda": torch.version.cuda,
         "cuda_available": torch.cuda.is_available(),
@@ -110,8 +112,18 @@ async def transcribe(
                 "summary": None,
                 "text_url": f"/outputs/{txt_path.name}",
                 "json_url": f"/outputs/{json_path.name}",
+                "input_duration_sec": result.input_duration_sec,
+                "audio_duration_sec": result.audio_duration_sec,
+                "text_chars": len(result.text),
+                "max_new_tokens": result.max_new_tokens,
             }
             job.log(f"识别语言：{result.language or 'unknown'}")
+            if result.input_duration_sec is not None and result.audio_duration_sec is not None:
+                job.log(
+                    f"时长核对：输入 {result.input_duration_sec:.1f}s / "
+                    f"ASR {result.audio_duration_sec:.1f}s"
+                )
+            job.log(f"输出字符数：{len(result.text)}")
 
         jobs.start(job, run)
         return JSONResponse(

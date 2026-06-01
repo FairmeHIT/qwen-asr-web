@@ -46,6 +46,9 @@ class TranscriptionResult:
     checkpoint: str
     language: str
     text: str
+    input_duration_sec: Optional[float] = None
+    audio_duration_sec: Optional[float] = None
+    max_new_tokens: int = 4096
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False, indent=2)
@@ -91,6 +94,31 @@ def dtype_from_name(name: str):
     if value in {"fp32", "float32"}:
         return torch.float32
     raise ValueError(f"Unsupported dtype: {name}")
+
+
+def media_duration_sec(input_path: Path) -> Optional[float]:
+    try:
+        import av
+
+        with av.open(str(input_path)) as container:
+            if container.duration is not None:
+                return round(float(container.duration) / 1_000_000, 3)
+            stream = next((s for s in container.streams if s.type == "audio"), None)
+            if stream and stream.duration and stream.time_base:
+                return round(float(stream.duration * stream.time_base), 3)
+    except Exception:
+        return None
+    return None
+
+
+def audio_file_duration_sec(input_path: Path) -> Optional[float]:
+    try:
+        import soundfile as sf
+
+        info = sf.info(str(input_path))
+        return round(float(info.duration), 3)
+    except Exception:
+        return media_duration_sec(input_path)
 
 
 def prepare_audio_for_asr(input_path: Path, work_dir: Path) -> tuple[Path, str]:
@@ -167,7 +195,7 @@ class ASRService:
         device_map: str = "cuda:0",
         dtype: str = "bfloat16",
         batch_size: int = 4,
-        max_new_tokens: int = 512,
+        max_new_tokens: int = 4096,
     ) -> None:
         root = project_root()
         self.checkpoint = self._resolve_checkpoint(checkpoint or os.environ.get("ASR_CHECKPOINT"), root)
@@ -236,16 +264,22 @@ class ASRService:
         with tempfile.TemporaryDirectory(prefix="qwen_asr_") as tmp:
             temp_dir = Path(tmp)
             report("检查输入文件", 25)
+            input_duration = media_duration_sec(input_path)
+            if input_duration is not None:
+                report(f"输入时长：{input_duration:.1f}s", 28)
             audio_path, audio_message = prepare_audio_for_asr(input_path, temp_dir)
+            audio_duration = audio_file_duration_sec(audio_path)
             if audio_path != input_path:
                 report(audio_message, 35)
             else:
                 report(audio_message, 35)
+            if audio_duration is not None:
+                report(f"ASR 音频时长：{audio_duration:.1f}s", 38)
             report("等待 ASR 推理资源", 40)
             with self._lock:
                 report("加载 ASR 模型", 45)
                 model = self.load()
-                report("模型已加载，开始转写", 60)
+                report(f"模型已加载，开始转写；max_new_tokens={self.max_new_tokens}", 60)
                 result = model.transcribe(
                     audio=str(audio_path),
                     context=context,
@@ -266,4 +300,7 @@ class ASRService:
                 checkpoint=self.checkpoint,
                 language=result.language or "",
                 text=result.text or "",
+                input_duration_sec=input_duration,
+                audio_duration_sec=audio_duration,
+                max_new_tokens=self.max_new_tokens,
             )

@@ -146,6 +146,13 @@ form.addEventListener("submit", async (event) => {
     output.value = data.text || "";
     setDownload(downloadText, data.text_url);
     setDownload(downloadJson, data.json_url);
+    if (data.audio_duration_sec && data.input_duration_sec) {
+      logs.textContent += `\n时长核对：输入 ${data.input_duration_sec}s / ASR ${data.audio_duration_sec}s`;
+    }
+    if (data.text_chars !== undefined) {
+      logs.textContent += `\n输出字符数：${data.text_chars}；max_new_tokens=${data.max_new_tokens}`;
+      logs.scrollTop = logs.scrollHeight;
+    }
     setStatus(data.language ? `完成 · ${data.language}` : "完成", "ready");
   } catch (error) {
     output.value = error.message || String(error);
