@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import shutil
 import uuid
 import os
@@ -7,7 +9,7 @@ from importlib.resources import files
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
@@ -180,6 +182,38 @@ def get_job(job_id: str) -> JSONResponse:
     if snapshot is None:
         raise HTTPException(status_code=404, detail="Job not found.")
     return JSONResponse(snapshot)
+
+
+@app.get("/api/jobs/{job_id}/events")
+async def job_events(job_id: str) -> StreamingResponse:
+    async def stream():
+        last_updated = 0.0
+        while True:
+            snapshot = jobs.snapshot(job_id)
+            if snapshot is None:
+                payload = json.dumps({"error": "Job not found."}, ensure_ascii=False)
+                yield f"event: error\ndata: {payload}\n\n"
+                return
+
+            updated_at = float(snapshot.get("updated_at") or 0)
+            if updated_at != last_updated:
+                last_updated = updated_at
+                payload = json.dumps(snapshot, ensure_ascii=False)
+                yield f"event: job\ndata: {payload}\n\n"
+
+            if snapshot.get("status") in {"succeeded", "failed"}:
+                return
+
+            await asyncio.sleep(0.5)
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/api/summarize")

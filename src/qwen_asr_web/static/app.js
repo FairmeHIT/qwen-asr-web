@@ -59,7 +59,25 @@ function setLogs(items) {
   logs.scrollTop = logs.scrollHeight;
 }
 
-async function waitForJob(jobId) {
+function applyJobSnapshot(job) {
+  jobMeta.textContent = `${job.status} · ${job.stage} · ${job.progress}%`;
+  setProgress(job.progress);
+  setLogs(job.logs);
+  if (job.partial_text !== undefined) {
+    output.value = job.partial_text || output.value;
+    output.scrollTop = output.scrollHeight;
+  }
+
+  if (job.status === "succeeded") {
+    return { done: true, result: job.result || {} };
+  }
+  if (job.status === "failed") {
+    throw new Error(job.error || "Transcription failed");
+  }
+  return { done: false, result: null };
+}
+
+async function pollJob(jobId) {
   while (true) {
     const res = await fetch(`/api/jobs/${jobId}`);
     const job = await res.json();
@@ -67,22 +85,60 @@ async function waitForJob(jobId) {
       throw new Error(job.detail || "Job status failed");
     }
 
-    jobMeta.textContent = `${job.status} · ${job.stage} · ${job.progress}%`;
-    setProgress(job.progress);
-    setLogs(job.logs);
-    if (job.partial_text) {
-      output.value = job.partial_text;
-    }
-
-    if (job.status === "succeeded") {
-      return job.result || {};
-    }
-    if (job.status === "failed") {
-      throw new Error(job.error || "Transcription failed");
+    const state = applyJobSnapshot(job);
+    if (state.done) {
+      return state.result;
     }
 
     await new Promise((resolve) => setTimeout(resolve, 1200));
   }
+}
+
+async function waitForJob(jobId) {
+  if (!window.EventSource) {
+    return pollJob(jobId);
+  }
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let fallbackStarted = false;
+    const source = new EventSource(`/api/jobs/${jobId}/events`);
+
+    function finish(callback, value) {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      source.close();
+      callback(value);
+    }
+
+    function startFallback(error) {
+      if (settled || fallbackStarted) {
+        return;
+      }
+      fallbackStarted = true;
+      source.close();
+      console.warn("Job event stream failed, falling back to polling.", error);
+      pollJob(jobId).then((result) => finish(resolve, result)).catch((err) => finish(reject, err));
+    }
+
+    source.addEventListener("job", (event) => {
+      try {
+        const job = JSON.parse(event.data);
+        const state = applyJobSnapshot(job);
+        if (state.done) {
+          finish(resolve, state.result);
+        }
+      } catch (error) {
+        finish(reject, error);
+      }
+    });
+
+    source.addEventListener("error", (event) => {
+      startFallback(event);
+    });
+  });
 }
 
 async function loadHealth() {
