@@ -59,6 +59,94 @@ function setLogs(items) {
   logs.scrollTop = logs.scrollHeight;
 }
 
+function appendInlineMarkdown(parent, text) {
+  const pattern = /(\*\*[^*]+\*\*|`[^`]+`)/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parent.append(document.createTextNode(text.slice(lastIndex, match.index)));
+    }
+
+    const token = match[0];
+    if (token.startsWith("**")) {
+      const strong = document.createElement("strong");
+      strong.textContent = token.slice(2, -2);
+      parent.append(strong);
+    } else {
+      const code = document.createElement("code");
+      code.textContent = token.slice(1, -1);
+      parent.append(code);
+    }
+    lastIndex = pattern.lastIndex;
+  }
+
+  if (lastIndex < text.length) {
+    parent.append(document.createTextNode(text.slice(lastIndex)));
+  }
+}
+
+function renderSummaryMarkdown(markdown) {
+  const text = (markdown || "").trim();
+  summaryOutput.replaceChildren();
+
+  if (!text) {
+    summaryOutput.classList.add("empty");
+    summaryOutput.textContent = "点击“提炼要点”后，摘要会显示在这里";
+    return;
+  }
+
+  summaryOutput.classList.remove("empty");
+  let currentList = null;
+  let currentListType = "";
+
+  function closeList() {
+    currentList = null;
+    currentListType = "";
+  }
+
+  function appendBlock(element, content) {
+    appendInlineMarkdown(element, content.trim());
+    summaryOutput.append(element);
+  }
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) {
+      closeList();
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      closeList();
+      const level = String(Math.min(heading[1].length + 2, 4));
+      appendBlock(document.createElement(`h${level}`), heading[2]);
+      continue;
+    }
+
+    const bullet = line.match(/^[-*]\s+(.+)$/);
+    const numbered = line.match(/^\d+[.)]\s+(.+)$/);
+    if (bullet || numbered) {
+      const type = bullet ? "ul" : "ol";
+      if (!currentList || currentListType !== type) {
+        closeList();
+        currentList = document.createElement(type);
+        currentListType = type;
+        summaryOutput.append(currentList);
+      }
+      const item = document.createElement("li");
+      appendInlineMarkdown(item, bullet ? bullet[1] : numbered[1]);
+      currentList.append(item);
+      continue;
+    }
+
+    closeList();
+    appendBlock(document.createElement("p"), line);
+  }
+}
+
 function applyJobSnapshot(job) {
   jobMeta.textContent = `${job.status} · ${job.stage} · ${job.progress}%`;
   setProgress(job.progress);
@@ -151,7 +239,8 @@ async function loadHealth() {
       setStatus("CUDA 未可用", "error");
     }
     if (!health.llm_configured) {
-      summaryOutput.placeholder = "未配置 LLM_API_KEY 或 DEEPSEEK_API_KEY，配置后可提炼要点";
+      summaryOutput.classList.add("empty");
+      summaryOutput.textContent = "未配置 LLM_API_KEY 或 DEEPSEEK_API_KEY，配置后可提炼要点";
     }
   } catch (error) {
     setStatus("服务未就绪", "error");
@@ -184,7 +273,7 @@ form.addEventListener("submit", async (event) => {
   submit.disabled = true;
   submit.querySelector("span").textContent = "转写中";
   output.value = "";
-  summaryOutput.value = "";
+  renderSummaryMarkdown("");
   jobMeta.textContent = "上传中";
   setProgress(0);
   setLogs(["准备上传文件"]);
@@ -236,7 +325,8 @@ summarize.addEventListener("click", async () => {
   setDownload(downloadSummaryJson, "");
   summarize.disabled = true;
   summarize.textContent = "提炼中";
-  summaryOutput.value = "";
+  summaryOutput.classList.add("empty");
+  summaryOutput.textContent = "正在提炼要点...";
   setStatus("要点提炼中", "ready");
 
   try {
@@ -254,12 +344,13 @@ summarize.addEventListener("click", async () => {
     if (!res.ok) {
       throw new Error(errorMessage(data, "Summary failed"));
     }
-    summaryOutput.value = data.summary || "";
+    renderSummaryMarkdown(data.summary || "");
     setDownload(downloadSummary, data.summary_url);
     setDownload(downloadSummaryJson, data.json_url);
     setStatus(`提炼完成 · ${data.model}`, "ready");
   } catch (error) {
-    summaryOutput.value = error.message || String(error);
+    summaryOutput.classList.add("empty");
+    summaryOutput.textContent = error.message || String(error);
     setStatus("提炼失败", "error");
   } finally {
     summarize.disabled = false;
