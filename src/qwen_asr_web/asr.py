@@ -49,6 +49,7 @@ class TranscriptionResult:
     input_duration_sec: Optional[float] = None
     audio_duration_sec: Optional[float] = None
     max_new_tokens: int = 4096
+    chunk_seconds: int = 60
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), ensure_ascii=False, indent=2)
@@ -196,6 +197,7 @@ class ASRService:
         dtype: str = "bfloat16",
         batch_size: int = 4,
         max_new_tokens: int = 4096,
+        chunk_seconds: int = 60,
     ) -> None:
         root = project_root()
         self.checkpoint = self._resolve_checkpoint(checkpoint or os.environ.get("ASR_CHECKPOINT"), root)
@@ -203,6 +205,7 @@ class ASRService:
         self.dtype = dtype
         self.batch_size = batch_size
         self.max_new_tokens = max_new_tokens
+        self.chunk_seconds = max(5, int(chunk_seconds))
         self._model = None
         self._lock = threading.Lock()
 
@@ -250,6 +253,7 @@ class ASRService:
         context: str = "",
         keep_extracted_audio: bool = False,
         progress_callback: Optional[Callable[[str, Optional[int]], None]] = None,
+        text_callback: Optional[Callable[[str, int, int], None]] = None,
     ) -> TranscriptionResult:
         def report(message: str, progress: Optional[int] = None) -> None:
             if progress_callback:
@@ -275,16 +279,32 @@ class ASRService:
                 report(audio_message, 35)
             if audio_duration is not None:
                 report(f"ASR 音频时长：{audio_duration:.1f}s", 38)
+            chunks = self._load_audio_chunks(audio_path)
+            report(f"按 {self.chunk_seconds}s 切分为 {len(chunks)} 段", 40)
             report("等待 ASR 推理资源", 40)
             with self._lock:
                 report("加载 ASR 模型", 45)
                 model = self.load()
-                report(f"模型已加载，开始转写；max_new_tokens={self.max_new_tokens}", 60)
-                result = model.transcribe(
-                    audio=str(audio_path),
-                    context=context,
-                    language=language,
-                )[0]
+                report(f"模型已加载，开始逐段转写；max_new_tokens={self.max_new_tokens}", 50)
+                texts: list[str] = []
+                final_language = ""
+                total = len(chunks)
+                for index, (chunk_wav, sr, start_sec, end_sec) in enumerate(chunks, start=1):
+                    progress = 50 + int(35 * (index - 1) / max(total, 1))
+                    report(f"识别第 {index}/{total} 段：{start_sec:.1f}s - {end_sec:.1f}s", progress)
+                    result = model.transcribe(
+                        audio=(chunk_wav, sr),
+                        context=context,
+                        language=language,
+                    )[0]
+                    text = (result.text or "").strip()
+                    if text:
+                        segment = f"[{format_time(start_sec)} - {format_time(end_sec)}] {text}"
+                        texts.append(segment)
+                        if text_callback:
+                            text_callback(segment, index, total)
+                    final_language = result.language or final_language
+                merged_text = "\n".join(texts)
             report("模型推理完成", 85)
 
             if keep_extracted_audio and audio_path.parent == temp_dir:
@@ -298,9 +318,36 @@ class ASRService:
                 input=str(input_path),
                 audio=audio_display,
                 checkpoint=self.checkpoint,
-                language=result.language or "",
-                text=result.text or "",
+                language=final_language,
+                text=merged_text,
                 input_duration_sec=input_duration,
                 audio_duration_sec=audio_duration,
                 max_new_tokens=self.max_new_tokens,
+                chunk_seconds=self.chunk_seconds,
             )
+
+    def _load_audio_chunks(self, audio_path: Path) -> list[tuple[object, int, float, float]]:
+        import numpy as np
+        import soundfile as sf
+
+        audio, sr = sf.read(str(audio_path), dtype="float32", always_2d=False)
+        if audio.ndim > 1:
+            audio = np.mean(audio, axis=1).astype("float32")
+        chunk_len = int(self.chunk_seconds * sr)
+        chunks = []
+        total = int(audio.shape[0])
+        for start in range(0, total, chunk_len):
+            end = min(start + chunk_len, total)
+            if end <= start:
+                continue
+            chunks.append((audio[start:end], sr, start / sr, end / sr))
+        return chunks
+
+
+def format_time(seconds: float) -> str:
+    total = int(round(seconds))
+    h, rem = divmod(total, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h:02d}:{m:02d}:{s:02d}"
+    return f"{m:02d}:{s:02d}"

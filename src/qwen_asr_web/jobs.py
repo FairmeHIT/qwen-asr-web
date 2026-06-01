@@ -16,6 +16,7 @@ class Job:
     progress: int = 0
     stage: str = "queued"
     logs: list[str] = field(default_factory=list)
+    partial_text: str = ""
     result: Optional[dict[str, Any]] = None
     error: Optional[str] = None
     created_at: float = field(default_factory=time.time)

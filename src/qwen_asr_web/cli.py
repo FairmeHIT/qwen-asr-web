@@ -23,6 +23,7 @@ def add_transcribe_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--dtype", default="bfloat16", choices=["bfloat16", "float16", "float32"])
     parser.add_argument("--batch-size", type=int, default=4)
     parser.add_argument("--max-new-tokens", type=int, default=int(os.environ.get("ASR_MAX_NEW_TOKENS", "4096")))
+    parser.add_argument("--chunk-seconds", type=int, default=int(os.environ.get("ASR_CHUNK_SECONDS", "60")))
     parser.add_argument("--keep-extracted-audio", action="store_true")
 
 
@@ -37,6 +38,7 @@ def run_transcribe(args: argparse.Namespace) -> int:
         dtype=args.dtype,
         batch_size=args.batch_size,
         max_new_tokens=args.max_new_tokens,
+        chunk_seconds=args.chunk_seconds,
     )
     result = service.transcribe_file(
         input_path,

@@ -24,7 +24,10 @@ OUTPUT_DIR = ROOT / "data" / "outputs"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-service = ASRService(max_new_tokens=int(os.environ.get("ASR_MAX_NEW_TOKENS", "4096")))
+service = ASRService(
+    max_new_tokens=int(os.environ.get("ASR_MAX_NEW_TOKENS", "4096")),
+    chunk_seconds=int(os.environ.get("ASR_CHUNK_SECONDS", "60")),
+)
 llm_service = LLMService()
 jobs = JobStore()
 app = FastAPI(title="Qwen3-ASR Web", version=__version__)
@@ -48,6 +51,7 @@ def health() -> dict:
         "default_checkpoint": default_checkpoint(ROOT),
         "model_loaded": service._model is not None,
         "asr_max_new_tokens": service.max_new_tokens,
+        "asr_chunk_seconds": service.chunk_seconds,
         "torch": torch.__version__,
         "torch_cuda": torch.version.cuda,
         "cuda_available": torch.cuda.is_available(),
@@ -96,6 +100,7 @@ async def transcribe(
                 language=language.strip() or None,
                 context=context.strip(),
                 progress_callback=lambda message, progress=None: update_job(job, message, progress),
+                text_callback=lambda text, index, total: append_job_text(job, text, index, total),
             )
 
             job.stage = "writing"
@@ -116,6 +121,7 @@ async def transcribe(
                 "audio_duration_sec": result.audio_duration_sec,
                 "text_chars": len(result.text),
                 "max_new_tokens": result.max_new_tokens,
+                "chunk_seconds": result.chunk_seconds,
             }
             job.log(f"识别语言：{result.language or 'unknown'}")
             if result.input_duration_sec is not None and result.audio_duration_sec is not None:
@@ -152,6 +158,12 @@ def update_job(job: Job, message: str, progress: int | None = None) -> None:
     if progress is not None:
         job.progress = max(job.progress, min(int(progress), 99))
     job.log(message)
+
+
+def append_job_text(job: Job, text: str, index: int, total: int) -> None:
+    job.partial_text = f"{job.partial_text}\n{text}".strip()
+    job.progress = max(job.progress, 50 + int(35 * index / max(total, 1)))
+    job.log(f"第 {index}/{total} 段完成，累计 {len(job.partial_text)} 字")
 
 
 @app.get("/api/jobs/{job_id}")

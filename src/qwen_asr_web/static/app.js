@@ -69,6 +69,9 @@ async function waitForJob(jobId) {
     jobMeta.textContent = `${job.status} · ${job.stage} · ${job.progress}%`;
     setProgress(job.progress);
     setLogs(job.logs);
+    if (job.partial_text) {
+      output.value = job.partial_text;
+    }
 
     if (job.status === "succeeded") {
       return job.result || {};
