@@ -88,7 +88,7 @@ function appendInlineMarkdown(parent, text) {
 }
 
 function renderSummaryMarkdown(markdown) {
-  const text = (markdown || "").trim();
+  let text = (markdown || "").trim();
   summaryOutput.replaceChildren();
 
   if (!text) {
@@ -97,13 +97,23 @@ function renderSummaryMarkdown(markdown) {
     return;
   }
 
+  text = text
+    .replace(/^```(?:markdown|md)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
   summaryOutput.classList.remove("empty");
   let currentList = null;
   let currentListType = "";
+  let currentCodeBlock = null;
 
   function closeList() {
     currentList = null;
     currentListType = "";
+  }
+
+  function closeCodeBlock() {
+    currentCodeBlock = null;
   }
 
   function appendBlock(element, content) {
@@ -112,22 +122,46 @@ function renderSummaryMarkdown(markdown) {
   }
 
   for (const rawLine of text.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line) {
+    const line = rawLine.replace(/\s+$/, "");
+    const trimmed = line.trim();
+    if (trimmed.startsWith("```")) {
+      closeList();
+      if (currentCodeBlock) {
+        closeCodeBlock();
+      } else {
+        currentCodeBlock = document.createElement("pre");
+        summaryOutput.append(currentCodeBlock);
+      }
+      continue;
+    }
+
+    if (currentCodeBlock) {
+      currentCodeBlock.textContent += `${line}\n`;
+      continue;
+    }
+
+    if (!trimmed) {
       closeList();
       continue;
     }
 
-    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    const heading = trimmed.match(/^(#{1,6})\s*(.+)$/);
     if (heading) {
       closeList();
-      const level = String(Math.min(heading[1].length + 2, 4));
+      const level = String(Math.min(heading[1].length, 4));
       appendBlock(document.createElement(`h${level}`), heading[2]);
       continue;
     }
 
-    const bullet = line.match(/^[-*]\s+(.+)$/);
-    const numbered = line.match(/^\d+[.)]\s+(.+)$/);
+    const hr = trimmed.match(/^[-*_]{3,}$/);
+    if (hr) {
+      closeList();
+      summaryOutput.append(document.createElement("hr"));
+      continue;
+    }
+
+    const bullet = trimmed.match(/^[-*]\s+(.+)$/);
+    const numbered = trimmed.match(/^\d+[.)]\s+(.+)$/);
     if (bullet || numbered) {
       const type = bullet ? "ul" : "ol";
       if (!currentList || currentListType !== type) {
@@ -143,7 +177,7 @@ function renderSummaryMarkdown(markdown) {
     }
 
     closeList();
-    appendBlock(document.createElement("p"), line);
+    appendBlock(document.createElement("p"), trimmed);
   }
 }
 
