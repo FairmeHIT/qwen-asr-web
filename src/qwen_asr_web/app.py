@@ -99,6 +99,7 @@ async def transcribe(
                 upload_path,
                 language=language.strip() or None,
                 context=context.strip(),
+                keep_extracted_audio=True,
                 progress_callback=lambda message, progress=None: update_job(job, message, progress),
                 text_callback=lambda text, index, total: append_job_text(job, text, index, total),
             )
@@ -108,8 +109,14 @@ async def transcribe(
             job.log("转写完成，正在写出结果文件")
             txt_path = OUTPUT_DIR / f"{job.id}.txt"
             json_path = OUTPUT_DIR / f"{job.id}.json"
+            wav_path = OUTPUT_DIR / f"{job.id}.16k.wav"
             txt_path.write_text(result.text, encoding="utf-8")
             json_path.write_text(result.to_json(), encoding="utf-8")
+            audio_source = Path(result.audio)
+            audio_url = None
+            if audio_source.is_file() and audio_source.suffix.lower() == ".wav":
+                shutil.copy2(audio_source, wav_path)
+                audio_url = f"/outputs/{wav_path.name}"
             job.result = {
                 "id": job.id,
                 "language": result.language,
@@ -117,6 +124,7 @@ async def transcribe(
                 "summary": None,
                 "text_url": f"/outputs/{txt_path.name}",
                 "json_url": f"/outputs/{json_path.name}",
+                "audio_url": audio_url,
                 "input_duration_sec": result.input_duration_sec,
                 "audio_duration_sec": result.audio_duration_sec,
                 "text_chars": len(result.text),

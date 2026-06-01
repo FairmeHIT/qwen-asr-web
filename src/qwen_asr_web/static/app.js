@@ -8,6 +8,7 @@ const summarize = document.querySelector("#summarize");
 const jobMeta = document.querySelector("#jobMeta");
 const logs = document.querySelector("#logs");
 const progressBar = document.querySelector("#progressBar");
+const downloadAudio = document.querySelector("#downloadAudio");
 const downloadText = document.querySelector("#downloadText");
 const downloadJson = document.querySelector("#downloadJson");
 const downloadSummary = document.querySelector("#downloadSummary");
@@ -121,6 +122,7 @@ form.addEventListener("submit", async (event) => {
 
   setDownload(downloadText, "");
   setDownload(downloadJson, "");
+  setDownload(downloadAudio, "");
   setDownload(downloadSummary, "");
   setDownload(downloadSummaryJson, "");
   submit.disabled = true;
@@ -147,6 +149,7 @@ form.addEventListener("submit", async (event) => {
     setLogs([`任务已提交：${data.id}`]);
     data = await waitForJob(data.id);
     output.value = data.text || "";
+    setDownload(downloadAudio, data.audio_url);
     setDownload(downloadText, data.text_url);
     setDownload(downloadJson, data.json_url);
     if (data.audio_duration_sec && data.input_duration_sec) {
